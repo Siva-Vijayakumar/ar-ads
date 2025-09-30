@@ -37,8 +37,10 @@
 </head>
 <body>
   <div id="container"></div>
-  <!-- Removed autoplay, added preload -->
-  <video id="video1" src="./video2.mp4" loop muted playsinline preload="auto" style="display:none"></video>
+
+  <!-- Video moved off-screen instead of display:none -->
+  <video id="video1" src="./video2.mp4" loop muted playsinline preload="auto" 
+         style="position:absolute; top:-9999px; left:-9999px; width:1px; height:1px;"></video>
 
   <!-- Debug console -->
   <div id="debugConsole"></div>
@@ -88,21 +90,7 @@
         // Video
         const video1 = document.getElementById("video1");
 
-        // Autoplay handling
-        video1.play().then(() => {
-          console.log("Video autoplay started");
-        }).catch(() => {
-          console.log("Autoplay blocked, waiting for user gesture...");
-          const resume = () => {
-            console.log("User gesture detected, starting video...");
-            video1.play();
-            document.body.removeEventListener("touchstart", resume);
-            document.body.removeEventListener("click", resume);
-          };
-          document.body.addEventListener("touchstart", resume);
-          document.body.addEventListener("click", resume);
-        });
-
+        // Video texture
         let texture1;
         video1.addEventListener("loadeddata", () => {
           console.log("Video metadata loaded, creating texture...");
@@ -117,14 +105,20 @@
           anchor.group.add(plane1);
         });
 
-        // Debug anchor events
-        anchor.onTargetFound = () => console.log("Target found!");
-        anchor.onTargetLost = () => console.log("Target lost!");
+        // Start/stop video when target found/lost
+        anchor.onTargetFound = () => {
+          console.log("Target found → playing video");
+          video1.play().catch(e => console.log("Play error:", e));
+        };
+        anchor.onTargetLost = () => {
+          console.log("Target lost → pausing video");
+          video1.pause();
+        };
 
         await mindarThree.start();
         console.log("MindAR started successfully");
 
-        // Animation loop with texture update
+        // Animation loop with video texture update
         renderer.setAnimationLoop(() => {
           if (texture1 && video1.readyState >= video1.HAVE_CURRENT_DATA) {
             texture1.needsUpdate = true;
