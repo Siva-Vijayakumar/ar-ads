@@ -37,10 +37,7 @@
 </head>
 <body>
   <div id="container"></div>
-
-  <!-- Video moved off-screen instead of display:none -->
-  <video id="video1" src="./video2.mp4" loop muted playsinline preload="auto" 
-         style="position:absolute; top:-9999px; left:-9999px; width:1px; height:1px;"></video>
+  <video id="video1" src="./vii.mp4" loop muted playsinline autoplay style="display:none"></video>
 
   <!-- Debug console -->
   <div id="debugConsole"></div>
@@ -55,6 +52,7 @@
       debugEl.textContent += msg + "\n";
       debugEl.scrollTop = debugEl.scrollHeight;
     }
+    // Override console.log / console.error
     const oldLog = console.log;
     console.log = function(...args) {
       oldLog.apply(console, args);
@@ -89,40 +87,29 @@
 
         // Video
         const video1 = document.getElementById("video1");
-
-        // Video texture
-        let texture1;
-        video1.addEventListener("loadeddata", () => {
-          console.log("Video metadata loaded, creating texture...");
-          texture1 = new THREE.VideoTexture(video1);
-          texture1.minFilter = THREE.LinearFilter;
-          texture1.magFilter = THREE.LinearFilter;
-          texture1.format = THREE.RGBFormat;
-
-          const geometry1 = new THREE.PlaneGeometry(1, 0.7);
-          const material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
-          const plane1 = new THREE.Mesh(geometry1, material1);
-          anchor.group.add(plane1);
+        video1.play().catch(() => {
+          console.log("Autoplay blocked, waiting for user gesture...");
+          const resume = () => {
+            console.log("User gesture detected, starting video...");
+            video1.play();
+            document.body.removeEventListener("touchstart", resume);
+            document.body.removeEventListener("click", resume);
+          };
+          document.body.addEventListener("touchstart", resume);
+          document.body.addEventListener("click", resume);
         });
 
-        // Start/stop video when target found/lost
-        anchor.onTargetFound = () => {
-          console.log("Target found → playing video");
-          video1.play().catch(e => console.log("Play error:", e));
-        };
-        anchor.onTargetLost = () => {
-          console.log("Target lost → pausing video");
-          video1.pause();
-        };
+        const texture1 = new THREE.VideoTexture(video1);
+        const geometry1 = new THREE.PlaneGeometry(1, 0.7);
+        const material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
+        const plane1 = new THREE.Mesh(geometry1, material1);
+        plane1.position.set(0, 0, 0);
+        anchor.group.add(plane1);
 
         await mindarThree.start();
         console.log("MindAR started successfully");
 
-        // Animation loop with video texture update
         renderer.setAnimationLoop(() => {
-          if (texture1 && video1.readyState >= video1.HAVE_CURRENT_DATA) {
-            texture1.needsUpdate = true;
-          }
           renderer.render(scene, camera);
         });
 
