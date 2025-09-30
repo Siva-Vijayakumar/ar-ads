@@ -37,7 +37,8 @@
 </head>
 <body>
   <div id="container"></div>
-  <video id="video1" src="./sample-video.mp4" loop muted playsinline autoplay style="display:none"></video>
+  <!-- Removed autoplay, added preload -->
+  <video id="video1" src="./sample-video.mp4" loop muted playsinline preload="auto" style="display:none"></video>
 
   <!-- Debug console -->
   <div id="debugConsole"></div>
@@ -102,10 +103,10 @@
           document.body.addEventListener("click", resume);
         });
 
-        // Create texture only when video is ready
+        let texture1;
         video1.addEventListener("loadeddata", () => {
           console.log("Video metadata loaded, creating texture...");
-          const texture1 = new THREE.VideoTexture(video1);
+          texture1 = new THREE.VideoTexture(video1);
           texture1.minFilter = THREE.LinearFilter;
           texture1.magFilter = THREE.LinearFilter;
           texture1.format = THREE.RGBFormat;
@@ -113,7 +114,6 @@
           const geometry1 = new THREE.PlaneGeometry(1, 0.7);
           const material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
           const plane1 = new THREE.Mesh(geometry1, material1);
-          plane1.position.set(0, 0, 0);
           anchor.group.add(plane1);
         });
 
@@ -124,7 +124,11 @@
         await mindarThree.start();
         console.log("MindAR started successfully");
 
+        // Animation loop with texture update
         renderer.setAnimationLoop(() => {
+          if (texture1 && video1.readyState >= video1.HAVE_CURRENT_DATA) {
+            texture1.needsUpdate = true;
+          }
           renderer.render(scene, camera);
         });
 
