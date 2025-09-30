@@ -6,6 +6,23 @@
   <style>
     body { margin: 0; overflow: hidden; }
     #container { width: 100%; height: 100vh; }
+
+    /* Debug console styles */
+    #debugConsole {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      max-height: 30%;
+      overflow-y: auto;
+      background: rgba(0,0,0,0.8);
+      color: #0f0;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 4px;
+      z-index: 9999;
+      white-space: pre-wrap;
+    }
   </style>
 
   <script type="importmap">
@@ -20,60 +37,85 @@
 </head>
 <body>
   <div id="container"></div>
-
-  <!-- ✅ Put video in DOM for better mobile support -->
   <video id="video1" src="./sample-video.mp4" loop muted playsinline autoplay style="display:none"></video>
+
+  <!-- Debug console -->
+  <div id="debugConsole"></div>
 
   <script type="module">
     import * as THREE from 'three';
     import { MindARThree } from 'mindar-image-three';
 
+    // === Debug Console Setup ===
+    const debugEl = document.getElementById("debugConsole");
+    function logToScreen(msg) {
+      debugEl.textContent += msg + "\n";
+      debugEl.scrollTop = debugEl.scrollHeight;
+    }
+    // Override console.log / console.error
+    const oldLog = console.log;
+    console.log = function(...args) {
+      oldLog.apply(console, args);
+      logToScreen("[LOG] " + args.join(" "));
+    };
+    const oldErr = console.error;
+    console.error = function(...args) {
+      oldErr.apply(console, args);
+      logToScreen("[ERROR] " + args.join(" "));
+    };
+    window.addEventListener("error", e => {
+      logToScreen("[WINDOW ERROR] " + e.message);
+    });
+
     document.addEventListener("DOMContentLoaded", async () => {
-      const mindarThree = new MindARThree({
-        container: document.querySelector("#container"),
-        imageTargetSrc: "./targets.mind",
-        rendererOptions: { alpha: true }
-      });
+      try {
+        const mindarThree = new MindARThree({
+          container: document.querySelector("#container"),
+          imageTargetSrc: "./targets.mind",
+          rendererOptions: { alpha: true }
+        });
 
-      const { renderer, scene, camera } = mindarThree;
-      renderer.setClearColor(0x000000, 0);
+        const { renderer, scene, camera } = mindarThree;
+        renderer.setClearColor(0x000000, 0);
 
-      // Light
-      const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-      scene.add(light);
+        // Light
+        const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+        scene.add(light);
 
-      // Anchor for target[0]
-      const anchor = mindarThree.addAnchor(0);
+        // Anchor
+        const anchor = mindarThree.addAnchor(0);
 
-      // Get DOM video
-      const video1 = document.getElementById("video1");
+        // Video
+        const video1 = document.getElementById("video1");
+        video1.play().catch(() => {
+          console.log("Autoplay blocked, waiting for user gesture...");
+          const resume = () => {
+            console.log("User gesture detected, starting video...");
+            video1.play();
+            document.body.removeEventListener("touchstart", resume);
+            document.body.removeEventListener("click", resume);
+          };
+          document.body.addEventListener("touchstart", resume);
+          document.body.addEventListener("click", resume);
+        });
 
-      // Try to play
-      video1.play().catch(() => {
-        console.log("Autoplay blocked, waiting for user gesture...");
-        const resume = () => {
-          video1.play();
-          document.body.removeEventListener("touchstart", resume);
-          document.body.removeEventListener("click", resume);
-        };
-        document.body.addEventListener("touchstart", resume);
-        document.body.addEventListener("click", resume);
-      });
+        const texture1 = new THREE.VideoTexture(video1);
+        const geometry1 = new THREE.PlaneGeometry(1, 0.7);
+        const material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
+        const plane1 = new THREE.Mesh(geometry1, material1);
+        plane1.position.set(0, 0, 0);
+        anchor.group.add(plane1);
 
-      // Use video as texture
-      const texture1 = new THREE.VideoTexture(video1);
-      const geometry1 = new THREE.PlaneGeometry(1, 0.7);
-      const material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
-      const plane1 = new THREE.Mesh(geometry1, material1);
-      plane1.position.set(0, 0, 0);
-      anchor.group.add(plane1);
+        await mindarThree.start();
+        console.log("MindAR started successfully");
 
-      // Start AR
-      await mindarThree.start();
+        renderer.setAnimationLoop(() => {
+          renderer.render(scene, camera);
+        });
 
-      renderer.setAnimationLoop(() => {
-        renderer.render(scene, camera);
-      });
+      } catch (err) {
+        console.error("Init error:", err);
+      }
     });
   </script>
 </body>
