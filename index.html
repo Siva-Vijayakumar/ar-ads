@@ -21,21 +21,21 @@
 <body>
   <div id="container"></div>
 
+  <!-- ✅ Put video in DOM for better mobile support -->
+  <video id="video1" src="./sample-video.mp4" loop muted playsinline autoplay style="display:none"></video>
+
   <script type="module">
     import * as THREE from 'three';
     import { MindARThree } from 'mindar-image-three';
 
     document.addEventListener("DOMContentLoaded", async () => {
-      // Setup MindAR with transparent renderer
       const mindarThree = new MindARThree({
         container: document.querySelector("#container"),
         imageTargetSrc: "./targets.mind",
-        rendererOptions: { alpha: true } // enable transparency
+        rendererOptions: { alpha: true }
       });
 
       const { renderer, scene, camera } = mindarThree;
-
-      // Set transparent background
       renderer.setClearColor(0x000000, 0);
 
       // Light
@@ -45,18 +45,12 @@
       // Anchor for target[0]
       const anchor = mindarThree.addAnchor(0);
 
-      // Video setup
-      const video1 = document.createElement("video");
-      video1.src = "./sample-video.mp4"; 
-      video1.crossOrigin = "anonymous";
-      video1.loop = true;
-      video1.muted = true;          // must be muted for autoplay
-      video1.playsInline = true;    // iOS Safari inline playback
-      video1.autoplay = true;       // hint browser to autoplay
+      // Get DOM video
+      const video1 = document.getElementById("video1");
 
-      // Try to play the video
+      // Try to play
       video1.play().catch(() => {
-        // If autoplay is blocked, wait for user gesture
+        console.log("Autoplay blocked, waiting for user gesture...");
         const resume = () => {
           video1.play();
           document.body.removeEventListener("touchstart", resume);
@@ -66,7 +60,7 @@
         document.body.addEventListener("click", resume);
       });
 
-      // Create video texture
+      // Use video as texture
       const texture1 = new THREE.VideoTexture(video1);
       const geometry1 = new THREE.PlaneGeometry(1, 0.7);
       const material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
