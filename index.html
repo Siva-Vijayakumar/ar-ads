@@ -52,7 +52,6 @@
       debugEl.textContent += msg + "\n";
       debugEl.scrollTop = debugEl.scrollHeight;
     }
-    // Override console.log / console.error
     const oldLog = console.log;
     console.log = function(...args) {
       oldLog.apply(console, args);
@@ -87,7 +86,11 @@
 
         // Video
         const video1 = document.getElementById("video1");
-        video1.play().catch(() => {
+
+        // Autoplay handling
+        video1.play().then(() => {
+          console.log("Video autoplay started");
+        }).catch(() => {
           console.log("Autoplay blocked, waiting for user gesture...");
           const resume = () => {
             console.log("User gesture detected, starting video...");
@@ -99,12 +102,24 @@
           document.body.addEventListener("click", resume);
         });
 
-        const texture1 = new THREE.VideoTexture(video1);
-        const geometry1 = new THREE.PlaneGeometry(1, 0.7);
-        const material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
-        const plane1 = new THREE.Mesh(geometry1, material1);
-        plane1.position.set(0, 0, 0);
-        anchor.group.add(plane1);
+        // Create texture only when video is ready
+        video1.addEventListener("loadeddata", () => {
+          console.log("Video metadata loaded, creating texture...");
+          const texture1 = new THREE.VideoTexture(video1);
+          texture1.minFilter = THREE.LinearFilter;
+          texture1.magFilter = THREE.LinearFilter;
+          texture1.format = THREE.RGBFormat;
+
+          const geometry1 = new THREE.PlaneGeometry(1, 0.7);
+          const material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
+          const plane1 = new THREE.Mesh(geometry1, material1);
+          plane1.position.set(0, 0, 0);
+          anchor.group.add(plane1);
+        });
+
+        // Debug anchor events
+        anchor.onTargetFound = () => console.log("Target found!");
+        anchor.onTargetLost = () => console.log("Target lost!");
 
         await mindarThree.start();
         console.log("MindAR started successfully");
