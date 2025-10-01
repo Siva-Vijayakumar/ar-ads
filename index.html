@@ -36,6 +36,38 @@
       opacity: 0;
       pointer-events: none;
     }
+
+    /* Start AR overlay styles */
+    #startOverlay {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 10000;
+      text-align: center;
+      padding: 24px;
+    }
+    #startOverlay.hidden {
+      display: none;
+    }
+    #startButton {
+      appearance: none;
+      border: none;
+      padding: 12px 18px;
+      background: #10b981; /* teal */
+      color: #000;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    #startButton:active {
+      transform: scale(0.98);
+    }
   </style>
 
    Import map for browser ESM 
@@ -67,137 +99,108 @@
    Debug console 
   <div id="debugConsole"></div>
 
+   Start AR overlay 
+  <div id="startOverlay" role="dialog" aria-modal="true" aria-label="Start AR">
+    <h2 style="margin:0; font: 700 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif;">Ready to start AR?</h2>
+    <p style="margin:0; opacity:0.8;">Tap the button below to enable camera and video playback.</p>
+    <button id="startButton" type="button">Start AR</button>
+  </div>
+
   <script type="module">
-    import * as THREE from 'three';
-    import { MindARThree } from 'mindar-image-three';
+    document.addEventListener("DOMContentLoaded", () => {
+      const startOverlay = document.getElementById("startOverlay");
+      const startButton = document.getElementById("startButton");
+      const video1 = document.getElementById("video1");
 
-    // === Debug Console Setup ===
-    const debugEl = document.getElementById("debugConsole");
-    function logToScreen(...args) {
-      const msg = args.map(a => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
-      debugEl.textContent += msg + "\\n";
-      debugEl.scrollTop = debugEl.scrollHeight;
-    }
-    const oldLog = console.log;
-    console.log = (...args) => { oldLog(...args); logToScreen("[LOG]", ...args); };
-    const oldErr = console.error;
-    console.error = (...args) => { oldErr(...args); logToScreen("[ERROR]", ...args); };
-    window.addEventListener("error", e => logToScreen("[WINDOW ERROR]", e.message));
+      const startAR = async () => {
+        try {
+          const { MindARThree } = await import('mindar-image-three');
+          const THREE = await import('three');
 
-    // Utility: robust autoplay with user-gesture fallback
-    async function ensurePlay(video) {
-      try {
-        await video.play();
-        console.log("Video autoplayed");
-      } catch {
-        console.log("Autoplay blocked. Waiting for user gesture…");
-        const resume = async () => {
-          try {
-            await video.play();
-            console.log("Video started after user gesture");
-          } catch (err) {
-            console.error("Video play error after gesture:", err);
-          } finally {
-            document.body.removeEventListener("touchstart", resume);
-            document.body.removeEventListener("click", resume);
-          }
-        };
-        document.body.addEventListener("touchstart", resume, { once: true });
-        document.body.addEventListener("click", resume, { once: true });
-      }
-    }
+          // Create MindAR and Three after gesture
+          const mindarThree = new MindARThree({
+            container: document.querySelector("#container"),
+            imageTargetSrc: "./targets.mind",
+            rendererOptions: { alpha: true }
+          });
 
-    document.addEventListener("DOMContentLoaded", async () => {
-      try {
-        const mindarThree = new MindARThree({
-          container: document.querySelector("#container"),
-          imageTargetSrc: "./targets.mind",
-          rendererOptions: { alpha: true }
-        });
-
-        const { renderer, scene, camera } = mindarThree;
-        renderer.setClearColor(0x000000, 0);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); // reduce work on mobile
-
-        // Lighting
-        const light = new THREE.HemisphereLight(0xffffff, 0x444466, 1.0);
-        scene.add(light);
-
-        // Anchor for first target
-        const anchor = mindarThree.addAnchor(0);
-
-        // Video setup
-        const video1 = document.getElementById("video1");
-        video1.muted = true; // required for autoplay
-        video1.setAttribute("playsinline", "");
-        video1.setAttribute("webkit-playsinline", "");
-        video1.setAttribute("preload", "auto");
-        video1.crossOrigin = "anonymous";
-
-        // Helpful logging on mobile
-        ["loadstart","loadedmetadata","canplay","play","pause","ended","waiting","stalled","suspend","error"].forEach(ev => {
-          video1.addEventListener(ev, () => console.log("[video event]", ev, video1.error || ""));
-        });
-
-        // Start/resume playback (may need gesture)
-        await ensurePlay(video1);
-
-        await new Promise(resolve => {
-          if (video1.readyState >= 3 /* HAVE_FUTURE_DATA */) resolve();
-          else video1.addEventListener("canplay", resolve, { once: true });
-        });
-
-        // Create texture after the video is actually decodable
-        const texture1 = new THREE.VideoTexture(video1);
-        texture1.minFilter = THREE.LinearFilter;
-        texture1.magFilter = THREE.LinearFilter;
-        texture1.generateMipmaps = false;
-        if (THREE.SRGBColorSpace) texture1.colorSpace = THREE.SRGBColorSpace;
-
-        const geometry1 = new THREE.PlaneGeometry(1, 0.7);
-        const material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
-        const plane1 = new THREE.Mesh(geometry1, material1);
-        plane1.visible = false; // hide until target found
-        anchor.group.add(plane1);
-
-        anchor.onTargetFound = () => {
-          console.log("Target found");
-          plane1.visible = true;
-          video1.play().catch(() => {});
-        };
-        anchor.onTargetLost = () => {
-          console.log("Target lost");
-          plane1.visible = false;
-          video1.pause();
-        };
-
-        if (typeof video1.requestVideoFrameCallback === "function") {
-          const onFrame = () => {
-            texture1.needsUpdate = true;
-            video1.requestVideoFrameCallback(onFrame);
-          };
-          video1.requestVideoFrameCallback(onFrame);
-        }
-
-        await mindarThree.start();
-        console.log("MindAR started successfully");
-
-        // Render loop (fallback nudge for devices without rVFC)
-        renderer.setAnimationLoop(() => {
-          if (video1.readyState >= video1.HAVE_CURRENT_DATA) {
-            texture1.needsUpdate = true;
-          }
-          renderer.render(scene, camera);
-        });
-
-        // Handle resize
-        window.addEventListener("resize", () => {
+          const { renderer, scene, camera } = mindarThree;
+          renderer.setClearColor(0x000000, 0);
           renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-        });
 
-      } catch (err) {
-        console.error("Init error:", err);
-      }
+          const light = new (THREE as any).HemisphereLight(0xffffff, 0x444466, 1.0);
+          scene.add(light);
+
+          const anchor = mindarThree.addAnchor(0);
+
+          // Ensure video flags (already set in markup, but re-assert)
+          video1.muted = true;
+          video1.setAttribute("playsinline", "");
+          video1.setAttribute("webkit-playsinline", "");
+          video1.setAttribute("preload", "auto");
+          (video1 as any).crossOrigin = "anonymous";
+
+          // Wait until video can play (now that we are in a user gesture, play should succeed)
+          try { await (video1 as HTMLVideoElement).play(); } catch {}
+          await new Promise(resolve => {
+            if (video1.readyState >= 3 /* HAVE_FUTURE_DATA */) resolve(0);
+            else video1.addEventListener("canplay", resolve, { once: true });
+          });
+
+          const texture1 = new (THREE as any).VideoTexture(video1);
+          texture1.minFilter = (THREE as any).LinearFilter;
+          texture1.magFilter = (THREE as any).LinearFilter;
+          texture1.generateMipmaps = false;
+          if ((THREE as any).SRGBColorSpace) texture1.colorSpace = (THREE as any).SRGBColorSpace;
+
+          const geometry1 = new (THREE as any).PlaneGeometry(1, 0.7);
+          const material1 = new (THREE as any).MeshBasicMaterial({ map: texture1, side: (THREE as any).DoubleSide });
+          const plane1 = new (THREE as any).Mesh(geometry1, material1);
+          plane1.visible = false;
+          anchor.group.add(plane1);
+
+          anchor.onTargetFound = () => {
+            console.log("Target found");
+            plane1.visible = true;
+            (video1 as HTMLVideoElement).play().catch(() => {});
+          };
+          anchor.onTargetLost = () => {
+            console.log("Target lost");
+            plane1.visible = false;
+            (video1 as HTMLVideoElement).pause();
+          };
+
+          if (typeof (video1 as any).requestVideoFrameCallback === "function") {
+            const onFrame = () => {
+              texture1.needsUpdate = true;
+              (video1 as any).requestVideoFrameCallback(onFrame);
+            };
+            (video1 as any).requestVideoFrameCallback(onFrame);
+          }
+
+          await mindarThree.start();
+          console.log("MindAR started successfully");
+
+          renderer.setAnimationLoop(() => {
+            if (video1.readyState >= (video1 as any).HAVE_CURRENT_DATA) {
+              texture1.needsUpdate = true;
+            }
+            renderer.render(scene, camera);
+          });
+
+          window.addEventListener("resize", () => {
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+          });
+        } catch (err) {
+          console.error("Init error:", err);
+        }
+      };
+
+      startButton?.addEventListener("click", async () => {
+        startOverlay?.classList.add("hidden");
+        // Start AR (includes video play) within this gesture
+        await startAR();
+      }, { once: true });
     });
   </script>
 </body>
