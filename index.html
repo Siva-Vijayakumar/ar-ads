@@ -102,7 +102,7 @@
    Start AR overlay 
   <div id="startOverlay" role="dialog" aria-modal="true" aria-label="Start AR">
     <h2 style="margin:0; font: 700 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif;">Ready to start AR?</h2>
-    <p style="margin:0; opacity:0.8;">Tap the button below to enable camera and video playback.</p>
+    <p id="overlayHint" style="margin:0; opacity:0.8;">Tap the button below to enable camera and video playback.</p>
     <button id="startButton" type="button">Start AR</button>
   </div>
 
@@ -130,16 +130,37 @@
       const startOverlay = document.getElementById("startOverlay");
       const startButton = document.getElementById("startButton");
       const video1 = document.getElementById("video1");
+      const overlayHint = document.getElementById("overlayHint");
 
       if (!startButton || !video1) {
         console.error("Missing start button or video element.");
         return;
       }
 
-      // Light logging for video events on mobile
+      function describeMediaError(err) {
+        if (!err) return "Unknown error";
+        try {
+          const code = err.code;
+          const map = {
+            1: "MEDIA_ERR_ABORTED",
+            2: "MEDIA_ERR_NETWORK",
+            3: "MEDIA_ERR_DECODE",
+            4: "MEDIA_ERR_SRC_NOT_SUPPORTED",
+          };
+          return map[code] || `Unknown code ${code}`;
+        } catch {
+          return String(err);
+        }
+      }
+
       ["loadedmetadata","canplay","play","pause","error","waiting","stalled","suspend"].forEach(ev =>
-        video1.addEventListener(ev, () => console.log("[video]", ev, video1.error))
+        video1.addEventListener(ev, () => {
+          const desc = video1.error ? describeMediaError(video1.error) : "";
+          console.log("[video]", ev, desc);
+        })
       );
+
+      let arStarted = false;
 
       const startAR = async () => {
         try {
@@ -155,43 +176,37 @@
             SRGBColorSpace
           } = await import("three");
 
-          // Create MindAR after user gesture
-          const mindarThree = new MindARThree({
-            container: document.querySelector("#container"),
-            imageTargetSrc: "./targets.mind",
-            rendererOptions: { alpha: true }
-          });
-
-          const { renderer, scene, camera } = mindarThree;
-          renderer.setClearColor(0x000000, 0);
-          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-
-          const light = new HemisphereLight(0xffffff, 0x444466, 1.0);
-          scene.add(light);
-
-          const anchor = mindarThree.addAnchor(0);
-
-          // Ensure mobile flags (also set in markup)
           video1.muted = true;
           video1.setAttribute("playsinline", "");
           video1.setAttribute("webkit-playsinline", "");
           video1.setAttribute("preload", "auto");
           try { video1.crossOrigin = "anonymous"; } catch {}
 
-          // Attempt playback within gesture; if still blocked, user will tap again
+          const mindarThree = new MindARThree({
+            container: document.querySelector("#container"),
+            imageTargetSrc: "./targets.mind",
+            rendererOptions: { alpha: true }
+          });
+          const { renderer, scene, camera } = mindarThree;
+          renderer.setClearColor(0x000000, 0);
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+          scene.add(new HemisphereLight(0xffffff, 0x444466, 1.0));
+
+          const anchor = mindarThree.addAnchor(0);
+
           try {
             await video1.play();
           } catch (e) {
-            console.log("Autoplay still blocked even in gesture, waiting for second tap...");
+            console.log("Autoplay blocked. Showing overlay for second tap…");
+            if (overlayHint) overlayHint.textContent = "Autoplay blocked. Tap again to enable video playback.";
+            startOverlay.classList.remove("hidden");
           }
 
-          // Wait for canplay to ensure frames will advance
           await new Promise(resolve => {
             if (video1.readyState >= 3) resolve();
             else video1.addEventListener("canplay", resolve, { once: true });
           });
 
-          // Build plane with VideoTexture
           const texture1 = new VideoTexture(video1);
           texture1.minFilter = LinearFilter;
           texture1.magFilter = LinearFilter;
@@ -206,7 +221,6 @@
           plane1.visible = false;
           anchor.group.add(plane1);
 
-          // Show/hide and keep playback aligned with tracking
           anchor.onTargetFound = () => {
             console.log("Target found");
             plane1.visible = true;
@@ -218,7 +232,6 @@
             video1.pause();
           };
 
-          // Prefer rVFC for precise texture updates
           if (typeof video1.requestVideoFrameCallback === "function") {
             const onFrame = () => {
               texture1.needsUpdate = true;
@@ -230,7 +243,6 @@
           await mindarThree.start();
           console.log("MindAR started successfully");
 
-          // Render loop with fallback texture updates
           renderer.setAnimationLoop(() => {
             if (video1.readyState >= video1.HAVE_CURRENT_DATA) {
               texture1.needsUpdate = true;
@@ -246,11 +258,22 @@
         }
       };
 
-      // Start on first tap/click (user gesture)
       startButton.addEventListener("click", async () => {
-        startOverlay.classList.add("hidden");
-        await startAR();
-      }, { once: true });
+        if (!arStarted) {
+          arStarted = true;
+          startOverlay.classList.add("hidden");
+          await startAR();
+        } else {
+          try {
+            await video1.play();
+            startOverlay.classList.add("hidden");
+            console.log("Video playback enabled on second tap.");
+          } catch (e) {
+            console.log("Still blocked. Error:", describeMediaError(video1.error || e));
+            if (overlayHint) overlayHint.textContent = "Still blocked. Tap again to enable video playback.";
+          }
+        }
+      });
     });
   </script>
 </body>
