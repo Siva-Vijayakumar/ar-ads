@@ -8,7 +8,7 @@
     body { margin: 0; overflow: hidden; background: #000; }
     #container { width: 100%; height: 100vh; }
 
-    /* Debug console styles */
+    /* Debug console */
     #debugConsole {
       position: fixed;
       bottom: 0;
@@ -25,12 +25,9 @@
       white-space: pre-wrap;
     }
 
-    /* Keep the video "visible" to the browser to avoid throttling on mobile.
-       Move it offscreen instead of display:none, keep it tiny and transparent. */
+    /* Keep the video in DOM (tiny + transparent) */
     #video1 {
       position: fixed;
-      left: -9999px;
-      top: auto;
       width: 1px;
       height: 1px;
       opacity: 0;
@@ -70,7 +67,7 @@
     }
   </style>
 
-   Import map for browser ESM 
+  <!-- Import map for browser ESM -->
   <script type="importmap">
   {
     "imports": {
@@ -84,22 +81,23 @@
 <body>
   <div id="container"></div>
 
-   Offscreen video: mobile-safe attributes 
+  <!-- Offscreen video: safe for mobile autoplay -->
   <video
     id="video1"
     src="/aa.mp4"
     loop
     muted
+    autoplay
     playsinline
     webkit-playsinline
     preload="auto"
     crossOrigin="anonymous"
   ></video>
 
-   Debug console 
+  <!-- Debug console -->
   <div id="debugConsole"></div>
 
-   Start AR overlay 
+  <!-- Start AR overlay -->
   <div id="startOverlay" role="dialog" aria-modal="true" aria-label="Start AR">
     <h2 style="margin:0; font: 700 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif;">Ready to start AR?</h2>
     <p id="overlayHint" style="margin:0; opacity:0.8;">Tap the button below to enable camera and video playback.</p>
@@ -110,8 +108,7 @@
     // Debug console helpers
     const debugEl = document.getElementById("debugConsole");
     function logToScreen(msg) {
-      if (!debugEl) return;
-      debugEl.textContent += msg + "\\n";
+      debugEl.textContent += msg + "\n";
       debugEl.scrollTop = debugEl.scrollHeight;
     }
     const oldLog = console.log;
@@ -139,18 +136,8 @@
 
       function describeMediaError(err) {
         if (!err) return "Unknown error";
-        try {
-          const code = err.code;
-          const map = {
-            1: "MEDIA_ERR_ABORTED",
-            2: "MEDIA_ERR_NETWORK",
-            3: "MEDIA_ERR_DECODE",
-            4: "MEDIA_ERR_SRC_NOT_SUPPORTED",
-          };
-          return map[code] || `Unknown code ${code}`;
-        } catch {
-          return String(err);
-        }
+        const map = {1:"MEDIA_ERR_ABORTED",2:"MEDIA_ERR_NETWORK",3:"MEDIA_ERR_DECODE",4:"MEDIA_ERR_SRC_NOT_SUPPORTED"};
+        return map[err.code] || `Unknown code ${err.code}`;
       }
 
       ["loadedmetadata","canplay","play","pause","error","waiting","stalled","suspend"].forEach(ev =>
@@ -161,22 +148,12 @@
       );
 
       let arStarted = false;
-      let videoEnabled = false;
       let initializing = false;
 
       const startAR = async () => {
         try {
           const { MindARThree } = await import("mindar-image-three");
-          const {
-            VideoTexture,
-            PlaneGeometry,
-            MeshBasicMaterial,
-            Mesh,
-            HemisphereLight,
-            DoubleSide,
-            LinearFilter,
-            SRGBColorSpace
-          } = await import("three");
+          const { VideoTexture, PlaneGeometry, MeshBasicMaterial, Mesh, HemisphereLight, DoubleSide, LinearFilter, SRGBColorSpace } = await import("three");
 
           const mindarThree = new MindARThree({
             container: document.querySelector("#container"),
@@ -199,12 +176,10 @@
           texture1.minFilter = LinearFilter;
           texture1.magFilter = LinearFilter;
           texture1.generateMipmaps = false;
-          if (typeof SRGBColorSpace !== "undefined") {
-            texture1.colorSpace = SRGBColorSpace;
-          }
+          if (typeof SRGBColorSpace !== "undefined") texture1.colorSpace = SRGBColorSpace;
 
           const geometry1 = new PlaneGeometry(1, 0.7);
-          const material1 = new MeshBasicMaterial({ map: texture1, side: DoubleSide, transparent: false });
+          const material1 = new MeshBasicMaterial({ map: texture1, side: DoubleSide });
           const plane1 = new Mesh(geometry1, material1);
           plane1.visible = false;
           anchor.group.add(plane1);
@@ -232,14 +207,8 @@
           console.log("MindAR started successfully");
 
           renderer.setAnimationLoop(() => {
-            if (video1.readyState >= video1.HAVE_CURRENT_DATA) {
-              texture1.needsUpdate = true;
-            }
+            if (video1.readyState >= video1.HAVE_CURRENT_DATA) texture1.needsUpdate = true;
             renderer.render(scene, camera);
-          });
-
-          window.addEventListener("resize", () => {
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
           });
         } catch (err) {
           console.error("Init error:", err);
@@ -247,33 +216,22 @@
       };
 
       startButton.addEventListener("click", async () => {
-        if (!videoEnabled) {
-          try {
-            const playPromise = video1.play();
-            if (playPromise !== undefined) {
-              await playPromise;
-            }
-            videoEnabled = true;
-            console.log("Video playback enabled.");
-          } catch (e) {
-            console.log("Autoplay blocked. Tap again to enable video playback.");
-            if (overlayHint) overlayHint.textContent = "Autoplay blocked. Tap again to enable video playback.";
-            startOverlay.classList.remove("hidden");
-            return;
+        try {
+          // Start video on user tap
+          await video1.play();
+          console.log("Video playback enabled.");
+
+          if (!arStarted && !initializing) {
+            initializing = true;
+            startOverlay.classList.add("hidden");
+            arStarted = true;
+            await startAR();
           }
+        } catch (e) {
+          console.error("User gesture required.", e);
+          overlayHint.textContent = "Please tap again to start AR and video.";
+          startOverlay.classList.remove("hidden");
         }
-
-        if (arStarted) {
-          try { await video1.play(); } catch {}
-          startOverlay.classList.add("hidden");
-          return;
-        }
-
-        if (initializing) return;
-        initializing = true;
-        startOverlay.classList.add("hidden");
-        arStarted = true;
-        await startAR();
       });
     });
   </script>
