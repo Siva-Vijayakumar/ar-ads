@@ -87,7 +87,7 @@
    Offscreen video: mobile-safe attributes 
   <video
     id="video1"
-    src="./aa.mp4"
+    src="/aa.mp4"
     loop
     muted
     playsinline
@@ -161,6 +161,8 @@
       );
 
       let arStarted = false;
+      let videoEnabled = false;
+      let initializing = false;
 
       const startAR = async () => {
         try {
@@ -176,15 +178,9 @@
             SRGBColorSpace
           } = await import("three");
 
-          video1.muted = true;
-          video1.setAttribute("playsinline", "");
-          video1.setAttribute("webkit-playsinline", "");
-          video1.setAttribute("preload", "auto");
-          try { video1.crossOrigin = "anonymous"; } catch {}
-
           const mindarThree = new MindARThree({
             container: document.querySelector("#container"),
-            imageTargetSrc: "./targets.mind",
+            imageTargetSrc: "/targets.mind",
             rendererOptions: { alpha: true }
           });
           const { renderer, scene, camera } = mindarThree;
@@ -193,14 +189,6 @@
           scene.add(new HemisphereLight(0xffffff, 0x444466, 1.0));
 
           const anchor = mindarThree.addAnchor(0);
-
-          try {
-            await video1.play();
-          } catch (e) {
-            console.log("Autoplay blocked. Showing overlay for second tap…");
-            if (overlayHint) overlayHint.textContent = "Autoplay blocked. Tap again to enable video playback.";
-            startOverlay.classList.remove("hidden");
-          }
 
           await new Promise(resolve => {
             if (video1.readyState >= 3) resolve();
@@ -259,20 +247,33 @@
       };
 
       startButton.addEventListener("click", async () => {
-        if (!arStarted) {
-          arStarted = true;
-          startOverlay.classList.add("hidden");
-          await startAR();
-        } else {
+        if (!videoEnabled) {
           try {
-            await video1.play();
-            startOverlay.classList.add("hidden");
-            console.log("Video playback enabled on second tap.");
+            const playPromise = video1.play();
+            if (playPromise !== undefined) {
+              await playPromise;
+            }
+            videoEnabled = true;
+            console.log("Video playback enabled.");
           } catch (e) {
-            console.log("Still blocked. Error:", describeMediaError(video1.error || e));
-            if (overlayHint) overlayHint.textContent = "Still blocked. Tap again to enable video playback.";
+            console.log("Autoplay blocked. Tap again to enable video playback.");
+            if (overlayHint) overlayHint.textContent = "Autoplay blocked. Tap again to enable video playback.";
+            startOverlay.classList.remove("hidden");
+            return;
           }
         }
+
+        if (arStarted) {
+          try { await video1.play(); } catch {}
+          startOverlay.classList.add("hidden");
+          return;
+        }
+
+        if (initializing) return;
+        initializing = true;
+        startOverlay.classList.add("hidden");
+        arStarted = true;
+        await startAR();
       });
     });
   </script>
